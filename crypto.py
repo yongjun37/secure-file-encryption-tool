@@ -44,18 +44,26 @@ def encrypt_file(input_file, output_file, key):
 
     # Read input_file 
     try:
-        with open(input_file, "rb") as file:
-            raw = file.read()
+        chunk_size = 1024 ** 2   # 1MB
+        with open(input_file, "rb") as f_in:
+            with open(output_file, "wb") as f_out:
+                # read, encrypt and write out the file continuously
+                while True:    
+                    chunk = f_in.read(chunk_size)
+                    if not chunk:
+                        break
+                    
+                    # encrypt 1MB chunk
+                    enc_chunk = cipher.encrypt(chunk)
+
+                    # write out chunk
+                    chunk_len = len(enc_chunk)
+                    f_out.write(chunk_len.to_bytes(4, byteorder='big'))
+                    f_out.write(enc_chunk)      
+        return True
+    
     except OSError:
         return False
-    
-    # Encrypt file
-    encrypted = cipher.encrypt(raw)
-
-    # Write encrypted code into output_file
-    with open(output_file, "wb") as file:
-        file.write(encrypted)
-        return True
 
 
 def decrypt_file(input_file, output_file, key):
@@ -73,21 +81,34 @@ def decrypt_file(input_file, output_file, key):
 
     # Read input_file file
     try:
-        with open(input_file, "rb") as file:
-            encrypted = file.read()
+        with open(input_file, "rb") as f_in:
+            with open(output_file, 'wb') as f_out:
+                while True:
+                    # get chunk size
+                    size_bytes = f_in.read(4)
+                    if not size_bytes:
+                        break 
+
+                    #bytes to integer 
+                    chunk_len = int.from_bytes(size_bytes, byteorder='big')
+
+                    # read encrypted chunks
+                    enc_chunk = f_in.read(chunk_len)
+                    if not enc_chunk:
+                        break
+                    
+                    # Check if file can be decrypted with key
+                    try:
+                        dec_chunk = cipher.decrypt(enc_chunk)
+                    except InvalidToken:
+                        return False
+                    
+                    # Write out decrypted chunk
+                    f_out.write(dec_chunk)
+        return True
+
     except OSError:
         return False
-    
-    # Check if file can be decrypted with key
-    try:
-        decrypted = cipher.decrypt(encrypted)
-    except InvalidToken:
-        return False
-    
-    # Write decrypted file into output_file
-    with open(output_file, "wb") as file:
-        file.write(decrypted)
-        return True
 
 
 def save_key(key, filename):
@@ -215,20 +236,28 @@ def encrypt_file_password(input_file, output_file, password):
     
     # Read and encrypt file
     try:
-        with open(input_file, "rb") as file:
-            raw = file.read()
-    except OSError:
-        return False
-    
-    encrypted = cipher.encrypt(raw)
+        with open(input_file, "rb") as f_in:
+            with open(output_file, 'wb') as f_out:
+                # Format header
+                f_out.write(MAGIC)
+                f_out.write(salt)
+                chunk_size = 1024 ** 2   # 1MB
 
-    # Write encrypted text into output
-    try:
-        with open(output_file, "wb") as file:
-            file.write(MAGIC)
-            file.write(salt)
-            file.write(encrypted)
-            return True
+                # Encrypt chunk by chunk
+                while True:
+                    chunk = f_in.read(chunk_size)
+                    if not chunk:
+                        break
+                    
+                    # encrypt 1MB chunk
+                    enc_chunk = cipher.encrypt(chunk)
+
+                    # write out chunk
+                    chunk_len = len(enc_chunk)
+                    f_out.write(chunk_len.to_bytes(4, byteorder='big'))
+                    f_out.write(enc_chunk)
+        return True
+    
     except OSError:
         return False
     
@@ -245,7 +274,6 @@ def decrypt_file_password(input_file, output_file, password):
     with open(input_file, "rb") as file:
         in_magic = file.read(4)
         salt = file.read(SALT_LEN)
-        encrypted = file.read()
 
     # Check if file is SFS1 encrypted
     if  in_magic != MAGIC:
@@ -261,14 +289,35 @@ def decrypt_file_password(input_file, output_file, password):
     
     # check if file can be decrypted with key
     try:
-        decrypted = cipher.decrypt(encrypted)
-    except InvalidToken:
-        return False
+        with open(input_file, "rb") as f_in:
+            # Skip magic bytes and salt length
+            f_in.seek(4 + SALT_LEN)
 
-    # Write file into output
-    try:
-        with open(output_file, "wb") as file:
-            file.write(decrypted)
-            return True
+            with open(output_file, 'wb') as f_out:
+                while True:
+                    # get chunk size
+                    size_bytes = f_in.read(4)
+                    if not size_bytes:
+                        break 
+
+                    #bytes to integer 
+                    chunk_len = int.from_bytes(size_bytes, byteorder='big')
+
+                    # read encrypted chunks
+                    enc_chunk = f_in.read(chunk_len)
+                    if not enc_chunk:
+                        break
+                    
+                    # Check if file can be decrypted with key
+                    try:
+                        dec_chunk = cipher.decrypt(enc_chunk)
+                        
+                        # Write out decrypted chunk
+                        f_out.write(dec_chunk)
+                    except InvalidToken:
+                        return False
+                    
+        return True
+    
     except OSError:
         return False
